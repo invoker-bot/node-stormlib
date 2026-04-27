@@ -2,12 +2,19 @@
 #include <StormLib.h>
 
 #include <cstdint>
+#include <cmath>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
 
 namespace {
+
+#if defined(_WIN32) && defined(UNICODE)
+using NativePath = std::wstring;
+#else
+using NativePath = std::string;
+#endif
 
 class ArchiveHandle {
  public:
@@ -75,10 +82,30 @@ class FindHandle {
   HANDLE handle_;
 };
 
-std::string StormErrorMessage(const std::string& action) {
+std::string StormErrorCode(DWORD errorCode) {
+  std::ostringstream code;
+  code << "STORM_" << errorCode;
+  return code.str();
+}
+
+std::string StormErrorMessage(const std::string& action, DWORD errorCode) {
   std::ostringstream message;
-  message << action << " failed with StormLib error " << GetLastError();
+  message << action << " failed with StormLib error " << errorCode;
   return message.str();
+}
+
+void ThrowStormError(Napi::Env env, const std::string& action) {
+  DWORD errorCode = GetLastError();
+  Napi::Error error = Napi::Error::New(env, StormErrorMessage(action, errorCode));
+  error.Value().Set("code", StormErrorCode(errorCode));
+  error.Value().Set("stormCode", Napi::Number::New(env, errorCode));
+  error.ThrowAsJavaScriptException();
+}
+
+void ThrowCodedRangeError(Napi::Env env, const std::string& message) {
+  Napi::RangeError error = Napi::RangeError::New(env, message);
+  error.Value().Set("code", "ERR_NODE_STORM_LIMIT");
+  error.ThrowAsJavaScriptException();
 }
 
 bool ReadStringArgument(
@@ -97,33 +124,145 @@ bool ReadStringArgument(
   return true;
 }
 
-bool ReadOptionalStringArgument(
+bool ReadOptionalOptionsArgument(
     const Napi::CallbackInfo& info,
     size_t index,
     const char* name,
-    const char* defaultValue,
-    std::string* value) {
+    Napi::Object* value) {
   Napi::Env env = info.Env();
   if (info.Length() <= index || info[index].IsUndefined() || info[index].IsNull()) {
-    *value = defaultValue;
+    *value = Napi::Object::New(env);
     return true;
   }
 
-  if (!info[index].IsString()) {
-    Napi::TypeError::New(env, std::string(name) + " must be a string")
+  if (!info[index].IsObject() || info[index].IsArray()) {
+    Napi::TypeError::New(env, std::string(name) + " must be an object")
         .ThrowAsJavaScriptException();
     return false;
   }
 
-  *value = info[index].As<Napi::String>().Utf8Value();
+  *value = info[index].As<Napi::Object>();
   return true;
 }
 
-ArchiveHandle OpenArchiveOrThrow(Napi::Env env, const std::string& archivePath) {
-  HANDLE archive = nullptr;
-  if (!SFileOpenArchive(archivePath.c_str(), 0, 0, &archive)) {
-    Napi::Error::New(env, StormErrorMessage("SFileOpenArchive"))
+bool ReadSafeIntegerOption(
+    Napi::Env env,
+    const Napi::Object& options,
+    const char* name,
+    bool* hasValue,
+    uint64_t* value) {
+  *hasValue = false;
+  *value = 0;
+
+  Napi::Value option = options.Get(name);
+  if (option.IsUndefined() || option.IsNull()) {
+    return true;
+  }
+
+  if (!option.IsNumber()) {
+    Napi::TypeError::New(env, std::string(name) + " must be a non-negative safe integer")
         .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  double number = option.As<Napi::Number>().DoubleValue();
+  constexpr double kMaxSafeInteger = 9007199254740991.0;
+  if (!std::isfinite(number) ||
+      number < 0 ||
+      number > kMaxSafeInteger ||
+      std::floor(number) != number) {
+    Napi::RangeError::New(env, std::string(name) + " must be a non-negative safe integer")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  *hasValue = true;
+  *value = static_cast<uint64_t>(number);
+  return true;
+}
+
+bool ReadListFilesArguments(
+    const Napi::CallbackInfo& info,
+    std::string* archivePath,
+    std::string* mask,
+    Napi::Object* options) {
+  Napi::Env env = info.Env();
+  if (!ReadStringArgument(info, 0, "archivePath", archivePath)) {
+    return false;
+  }
+
+  *mask = "*";
+  size_t optionsIndex = 2;
+  if (info.Length() > 1 && !info[1].IsUndefined() && !info[1].IsNull()) {
+    if (info[1].IsString()) {
+      *mask = info[1].As<Napi::String>().Utf8Value();
+    } else if (info[1].IsObject() && !info[1].IsArray()) {
+      optionsIndex = 1;
+    } else {
+      Napi::TypeError::New(env, "mask must be a string")
+          .ThrowAsJavaScriptException();
+      return false;
+    }
+  }
+
+  return ReadOptionalOptionsArgument(info, optionsIndex, "options", options);
+}
+
+bool Utf8ToNativePath(Napi::Env env, const std::string& path, NativePath* value) {
+#if defined(_WIN32) && defined(UNICODE)
+  if (path.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    Napi::RangeError::New(env, "path is too long").ThrowAsJavaScriptException();
+    return false;
+  }
+
+  if (path.empty()) {
+    value->clear();
+    return true;
+  }
+
+  int wideLength = MultiByteToWideChar(
+      CP_UTF8,
+      MB_ERR_INVALID_CHARS,
+      path.data(),
+      static_cast<int>(path.size()),
+      nullptr,
+      0);
+  if (wideLength == 0) {
+    Napi::TypeError::New(env, "path must be valid UTF-8")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  value->resize(static_cast<size_t>(wideLength));
+  int converted = MultiByteToWideChar(
+      CP_UTF8,
+      MB_ERR_INVALID_CHARS,
+      path.data(),
+      static_cast<int>(path.size()),
+      &(*value)[0],
+      wideLength);
+  if (converted == 0) {
+    Napi::TypeError::New(env, "path must be valid UTF-8")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  return true;
+#else
+  *value = path;
+  return true;
+#endif
+}
+
+ArchiveHandle OpenArchiveOrThrow(Napi::Env env, const std::string& archivePath) {
+  NativePath nativeArchivePath;
+  if (!Utf8ToNativePath(env, archivePath, &nativeArchivePath)) {
+    return ArchiveHandle(nullptr);
+  }
+
+  HANDLE archive = nullptr;
+  if (!SFileOpenArchive(nativeArchivePath.c_str(), 0, 0, &archive)) {
+    ThrowStormError(env, "SFileOpenArchive");
     return ArchiveHandle(nullptr);
   }
 
@@ -205,14 +344,24 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     Napi::Env env = info.Env();
     std::string archivePath;
     std::string mask;
-    if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
-        !ReadOptionalStringArgument(info, 1, "mask", "*", &mask)) {
+    Napi::Object options;
+    if (!ReadListFilesArguments(info, &archivePath, &mask, &options)) {
+      return env.Null();
+    }
+
+    bool hasMaxEntries = false;
+    uint64_t maxEntries = 0;
+    if (!ReadSafeIntegerOption(env, options, "maxEntries", &hasMaxEntries, &maxEntries)) {
       return env.Null();
     }
 
     ArchiveHandle archive = OpenArchiveOrThrow(env, archivePath);
     if (env.IsExceptionPending()) {
       return env.Null();
+    }
+
+    if (hasMaxEntries && maxEntries == 0) {
+      return Napi::Array::New(env);
     }
 
     SFILE_FIND_DATA data = {};
@@ -223,22 +372,29 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
         return Napi::Array::New(env);
       }
 
-      Napi::Error::New(env, StormErrorMessage("SFileFindFirstFile"))
-          .ThrowAsJavaScriptException();
+      ThrowStormError(env, "SFileFindFirstFile");
       return env.Null();
     }
 
     FindHandle searchHandle(search);
     Napi::Array files = Napi::Array::New(env);
     uint32_t index = 0;
+    bool exhausted = false;
     do {
       files.Set(index++, FindDataToObject(env, data));
+      if (hasMaxEntries && index >= maxEntries) {
+        return files;
+      }
+      if (index == std::numeric_limits<uint32_t>::max()) {
+        ThrowCodedRangeError(env, "too many archive entries to return");
+        return env.Null();
+      }
     } while (SFileFindNextFile(search, &data));
+    exhausted = true;
 
     DWORD errorCode = GetLastError();
-    if (errorCode != ERROR_NO_MORE_FILES) {
-      Napi::Error::New(env, StormErrorMessage("SFileFindNextFile"))
-          .ThrowAsJavaScriptException();
+    if (exhausted && errorCode != ERROR_NO_MORE_FILES) {
+      ThrowStormError(env, "SFileFindNextFile");
       return env.Null();
     }
 
@@ -266,8 +422,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
         return Napi::Boolean::New(env, false);
       }
 
-      Napi::Error::New(env, StormErrorMessage("SFileOpenFileEx"))
-          .ThrowAsJavaScriptException();
+      ThrowStormError(env, "SFileOpenFileEx");
       return env.Null();
     }
 
@@ -279,8 +434,16 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     Napi::Env env = info.Env();
     std::string archivePath;
     std::string fileName;
+    Napi::Object options;
     if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
-        !ReadStringArgument(info, 1, "fileName", &fileName)) {
+        !ReadStringArgument(info, 1, "fileName", &fileName) ||
+        !ReadOptionalOptionsArgument(info, 2, "options", &options)) {
+      return env.Null();
+    }
+
+    bool hasMaxBytes = false;
+    uint64_t maxBytes = 0;
+    if (!ReadSafeIntegerOption(env, options, "maxBytes", &hasMaxBytes, &maxBytes)) {
       return env.Null();
     }
 
@@ -291,8 +454,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
 
     HANDLE file = nullptr;
     if (!SFileOpenFileEx(archive.get(), fileName.c_str(), SFILE_OPEN_FROM_MPQ, &file)) {
-      Napi::Error::New(env, StormErrorMessage("SFileOpenFileEx"))
-          .ThrowAsJavaScriptException();
+      ThrowStormError(env, "SFileOpenFileEx");
       return env.Null();
     }
     FileHandle fileHandle(file);
@@ -300,14 +462,18 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     DWORD highSize = 0;
     DWORD lowSize = SFileGetFileSize(fileHandle.get(), &highSize);
     if (lowSize == SFILE_INVALID_SIZE && GetLastError() != ERROR_SUCCESS) {
-      Napi::Error::New(env, StormErrorMessage("SFileGetFileSize"))
-          .ThrowAsJavaScriptException();
+      ThrowStormError(env, "SFileGetFileSize");
+      return env.Null();
+    }
+
+    uint64_t fileSize = (static_cast<uint64_t>(highSize) << 32) | lowSize;
+    if (hasMaxBytes && fileSize > maxBytes) {
+      ThrowCodedRangeError(env, "file exceeds maxBytes limit");
       return env.Null();
     }
 
     if (highSize != 0 || lowSize > static_cast<DWORD>(std::numeric_limits<int32_t>::max())) {
-      Napi::RangeError::New(env, "file is too large to read into a Node.js Buffer")
-          .ThrowAsJavaScriptException();
+      ThrowCodedRangeError(env, "file is too large to read into a Node.js Buffer");
       return env.Null();
     }
 
@@ -315,14 +481,14 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     DWORD bytesRead = 0;
     if (lowSize > 0 &&
         !SFileReadFile(fileHandle.get(), buffer.data(), lowSize, &bytesRead, nullptr)) {
-      Napi::Error::New(env, StormErrorMessage("SFileReadFile"))
-          .ThrowAsJavaScriptException();
+      ThrowStormError(env, "SFileReadFile");
       return env.Null();
     }
 
     if (bytesRead != lowSize) {
-      Napi::Error::New(env, "SFileReadFile returned fewer bytes than expected")
-          .ThrowAsJavaScriptException();
+      Napi::Error error = Napi::Error::New(env, "SFileReadFile returned fewer bytes than expected");
+      error.Value().Set("code", "ERR_NODE_STORM_SHORT_READ");
+      error.ThrowAsJavaScriptException();
       return env.Null();
     }
 
@@ -345,13 +511,17 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
       return env.Null();
     }
 
+    NativePath nativeOutputPath;
+    if (!Utf8ToNativePath(env, outputPath, &nativeOutputPath)) {
+      return env.Null();
+    }
+
     if (!SFileExtractFile(
             archive.get(),
             fileName.c_str(),
-            outputPath.c_str(),
+            nativeOutputPath.c_str(),
             SFILE_OPEN_FROM_MPQ)) {
-      Napi::Error::New(env, StormErrorMessage("SFileExtractFile"))
-          .ThrowAsJavaScriptException();
+      ThrowStormError(env, "SFileExtractFile");
       return env.Null();
     }
 

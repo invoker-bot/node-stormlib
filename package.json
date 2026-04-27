@@ -3,11 +3,23 @@
   "version": "0.0.0-alpha.0",
   "description": "A library to process Blizzard game MPQ format archives.",
   "main": "index.js",
+  "types": "index.d.ts",
+  "binary": {
+    "module_name": "NodeStorm",
+    "module_path": "prebuilds/{platform}-{arch}",
+    "napi_versions": [
+      8
+    ]
+  },
   "files": [
+    "index.d.ts",
     "index.js",
+    "native.js",
+    "read-worker.js",
     "main.cc",
     "CMakeLists.txt",
     "cmake/",
+    "prebuilds/",
     "third_party/README.md",
     "third_party/StormLib/CMakeLists.txt",
     "third_party/StormLib/LICENSE",
@@ -17,7 +29,7 @@
     "build": "cmake-js compile",
     "install": "npm run build",
     "test": "node --test test/*.test.js",
-    "test:review": "node --test test/review-findings.expected-fail.js"
+    "test:review": "node --test test/review-findings.test.js"
   },
   "repository": {
     "type": "git",
@@ -33,9 +45,7 @@
   "license": "MIT",
   "dependencies": {
     "bindings": "^1.5.0",
+    "cmake-js": "^8.0.0",
     "node-addon-api": "^4.3.0"
-  },
-  "devDependencies": {
-    "cmake-js": "^8.0.0"
   }
 }

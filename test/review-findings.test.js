@@ -134,9 +134,13 @@ test('package has a prebuilt binary distribution path', () => {
     ...packageJson.devDependencies,
   }
   const allScripts = Object.values(packageJson.scripts || {}).join(' ')
+  const nativeLoader = fs.readFileSync(path.join(repoRoot, 'native.js'), 'utf8')
   const hasPrebuildTooling = /prebuild|prebuildify|node-pre-gyp/.test(allScripts) ||
     Boolean(allDependencies['prebuild-install']) ||
     Boolean(allDependencies['@mapbox/node-pre-gyp'])
 
   assert.ok(packageJson.binary || hasPrebuildTooling, 'expected prebuilt binary tooling')
+  assert.match(nativeLoader, /prebuilds/)
+  assert.match(nativeLoader, /process\.platform/)
+  assert.match(nativeLoader, /process\.arch/)
 })

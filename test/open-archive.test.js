@@ -13,11 +13,22 @@ const saveAndLoadMap = path.join(mapsDir, 'SaveAndLoad.w3x')
 const musicMap = path.join(mapsDir, 'Music.w3x')
 const rocMap = path.join(mapsDir, 'FunctionsWhichStopUnits.w3m')
 
+async function collectStream(readable) {
+  const chunks = []
+  for await (const chunk of readable) {
+    chunks.push(chunk)
+  }
+
+  return Buffer.concat(chunks)
+}
+
 test('exports the MPQ archive API', () => {
   assert.strictEqual(typeof storm.getArchiveInfo, 'function')
   assert.strictEqual(typeof storm.listFiles, 'function')
   assert.strictEqual(typeof storm.hasFile, 'function')
   assert.strictEqual(typeof storm.readFile, 'function')
+  assert.strictEqual(typeof storm.readFileAsync, 'function')
+  assert.strictEqual(typeof storm.createReadStream, 'function')
   assert.strictEqual(typeof storm.extractFile, 'function')
 })
 
@@ -58,6 +69,28 @@ test('reads files from an archive as buffers', () => {
 
   assert.ok(Buffer.isBuffer(contents))
   assert.ok(contents.length > 0)
+})
+
+test('reads files asynchronously and as readable streams', async () => {
+  const expected = storm.readFile(saveAndLoadMap, 'war3map.w3i')
+  const asyncContents = await storm.readFileAsync(saveAndLoadMap, 'war3map.w3i')
+  const streamContents = await collectStream(
+    storm.createReadStream(saveAndLoadMap, 'war3map.w3i'),
+  )
+
+  assert.deepStrictEqual(asyncContents, expected)
+  assert.deepStrictEqual(streamContents, expected)
+})
+
+test('preserves native error metadata for asynchronous reads', async () => {
+  await assert.rejects(
+    storm.readFileAsync(saveAndLoadMap, 'missing.txt'),
+    error => {
+      assert.match(error.code, /^STORM_/)
+      assert.strictEqual(typeof error.stormCode, 'number')
+      return true
+    },
+  )
 })
 
 test('extracts files from an archive', () => {

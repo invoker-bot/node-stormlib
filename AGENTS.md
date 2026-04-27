@@ -4,10 +4,11 @@
 
 This repository is a small Node.js native addon for working with Blizzard MPQ archive formats.
 
-- `index.js` is the package entry point and loads the compiled native addon through `bindings`.
+- `index.js` is the package entry point; `native.js` loads prebuilt addons before falling back to `bindings`.
 - `main.cc` contains the Node-API addon implementation.
 - `CMakeLists.txt` defines the native build target, currently `NodeStorm`.
 - `cmake/` contains helper modules for CMake.js and `node-addon-api` integration.
+- `test/` contains Node.js unit tests and Git LFS MPQ fixtures under `test/fixtures/maps/`.
 - `package.json` and `package-lock.json` define the Node package metadata and runtime dependencies.
 
 Keep new C++ sources near `main.cc` until the addon grows enough to justify a `src/` directory. Add generated build output only under ignored paths such as `build/`, `out/`, or `dist/`.
@@ -17,7 +18,8 @@ Keep new C++ sources near `main.cc` until the addon grows enough to justify a `s
 - `npm install`: installs dependencies and runs the package `install` script, which compiles the native addon with `cmake-js compile`.
 - `npm run install`: manually reruns the native compile step.
 - `npx cmake-js compile`: directly builds the addon when CMake.js is available through npm or globally.
-- `npm test`: currently fails with the placeholder `"Error: no test specified"` message; update this script when adding tests.
+- `npm test`: builds confidence in the public API and runs all `test/*.test.js` files.
+- `npm run test:review`: runs focused regression tests for prior review findings.
 
 Native builds require Node.js, npm, CMake, a C++ compiler, and CMake.js.
 
@@ -29,7 +31,7 @@ For C++, use two-space indentation, `PascalCase` for addon classes such as `Node
 
 ## Testing Guidelines
 
-There is no test suite yet. When adding behavior, add tests under `test/` and wire `npm test` to the chosen runner. Prefer tests that exercise the public JavaScript API from `index.js` rather than only C++ internals. Name tests by behavior, for example `test/open-archive.test.js`.
+Tests use Node's built-in `node:test` runner. When adding behavior, add tests under `test/` and keep assertions against the public JavaScript API from `index.js` unless native-only coverage is required. Name tests by behavior, for example `test/open-archive.test.js`.
 
 Before submitting native changes, run a clean addon build and any new tests.
 
