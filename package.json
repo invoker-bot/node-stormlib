@@ -1,6 +1,6 @@
 {
   "name": "node-storm",
-  "version": "0.0.0-alpha.0",
+  "version": "0.1.0-alpha.0",
   "description": "A library to process Blizzard game MPQ format archives.",
   "main": "index.js",
   "types": "index.d.ts",

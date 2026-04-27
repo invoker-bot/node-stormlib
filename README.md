@@ -72,6 +72,8 @@ console.log(mapInfo.length)
 Installing the package exposes an `mpq` command for common archive tasks.
 
 ```sh
+npm install -g node-storm
+mpq --help
 mpq info map.w3x
 mpq list map.w3x "war3map.*"
 mpq extract map.w3x war3map.w3i out/war3map.w3i --root out
