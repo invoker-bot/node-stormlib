@@ -39,7 +39,7 @@ function assertInsideRoot(outputPath, rootDir) {
   }
 
   const error = new RangeError('outputPath must stay inside the configured rootDir')
-  error.code = 'ERR_NODE_STORM_PATH_OUTSIDE_ROOT'
+  error.code = 'ERR_NODE_STORMLIB_PATH_OUTSIDE_ROOT'
   throw error
 }
 
@@ -66,14 +66,14 @@ function assertArchiveName(archivedName) {
   const normalized = archivedName.replace(/\\/g, '/')
   if (path.posix.isAbsolute(normalized) || /^[A-Za-z]:/.test(normalized)) {
     const error = new RangeError('archivedName must be a relative archive path')
-    error.code = 'ERR_NODE_STORM_UNSAFE_ARCHIVE_NAME'
+    error.code = 'ERR_NODE_STORMLIB_UNSAFE_ARCHIVE_NAME'
     throw error
   }
 
   const segments = normalized.split('/')
   if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
     const error = new RangeError('archivedName must not contain empty or traversal segments')
-    error.code = 'ERR_NODE_STORM_UNSAFE_ARCHIVE_NAME'
+    error.code = 'ERR_NODE_STORMLIB_UNSAFE_ARCHIVE_NAME'
     throw error
   }
 }
@@ -185,7 +185,7 @@ function addFile(archivePath, sourcePath, archivedName, options) {
     }
     if (stats.size > normalizedOptions.maxBytes) {
       const error = new RangeError('source file exceeds maxBytes limit')
-      error.code = 'ERR_NODE_STORM_LIMIT'
+      error.code = 'ERR_NODE_STORMLIB_LIMIT'
       throw error
     }
   }
@@ -212,7 +212,7 @@ function writeFile(archivePath, archivedName, data, options) {
     }
     if (data.length > normalizedOptions.maxBytes) {
       const error = new RangeError('data exceeds maxBytes limit')
-      error.code = 'ERR_NODE_STORM_LIMIT'
+      error.code = 'ERR_NODE_STORMLIB_LIMIT'
       throw error
     }
   }

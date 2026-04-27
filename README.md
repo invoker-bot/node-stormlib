@@ -1,11 +1,11 @@
-# node-storm
+# node-stormlib
 
 <p align="center">
   <strong>Node.js bindings for Blizzard MPQ archives, powered by StormLib.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/invokerrrr/node-storm">
+  <a href="https://github.com/invoker-bot/node-stormlib">
     <img alt="status" src="https://img.shields.io/badge/status-alpha-orange">
   </a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
@@ -13,7 +13,7 @@
   <img alt="native" src="https://img.shields.io/badge/native-Node--API-333333">
 </p>
 
-`node-storm` exposes a small Node.js API for reading Blizzard MPQ archives,
+`node-stormlib` exposes a small Node.js API for reading Blizzard MPQ archives,
 including Warcraft III `.w3m` and `.w3x` maps. The native addon links against
 the vendored [StormLib](https://github.com/ladislav-zezula/StormLib) source
 tree.
@@ -54,7 +54,7 @@ the loader uses it before falling back to the local CMake.js build output.
 ## Quick Start
 
 ```js
-const storm = require('node-storm')
+const storm = require('node-stormlib')
 
 const archivePath = 'test/fixtures/maps/SaveAndLoad.w3x'
 
@@ -72,7 +72,7 @@ console.log(mapInfo.length)
 Installing the package exposes an `mpq` command for common archive tasks.
 
 ```sh
-npm install -g node-storm
+npm install -g node-stormlib
 mpq --help
 mpq info map.w3x
 mpq list map.w3x "war3map.*"

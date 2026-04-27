@@ -11,7 +11,7 @@ const storm = require('..')
 const MPQ_FILE_COMPRESS_MASK = 0x0000ff00
 
 function withTempDir(callback) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-storm-write-'))
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-stormlib-write-'))
 
   try {
     return callback(tempDir)
@@ -25,7 +25,7 @@ test('creates MPQ archives and writes compressed files', () => {
     const archivePath = path.join(tempDir, 'created.mpq')
     const sourceRoot = path.join(tempDir, 'source')
     const sourcePath = path.join(sourceRoot, 'payload.txt')
-    const payload = Buffer.from('node-storm compressed payload\n'.repeat(512))
+    const payload = Buffer.from('node-stormlib compressed payload\n'.repeat(512))
 
     fs.mkdirSync(sourceRoot)
     fs.writeFileSync(sourcePath, payload)

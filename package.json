@@ -1,5 +1,5 @@
 {
-  "name": "node-storm",
+  "name": "node-stormlib",
   "version": "0.1.0-alpha.0",
   "description": "A library to process Blizzard game MPQ format archives.",
   "main": "index.js",
@@ -37,7 +37,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/invokerrrr/node-storm.git"
+    "url": "https://github.com/invoker-bot/node-stormlib.git"
   },
   "keywords": [
     "Storm",

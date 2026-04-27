@@ -104,7 +104,7 @@ void ThrowStormError(Napi::Env env, const std::string& action) {
 
 void ThrowCodedRangeError(Napi::Env env, const std::string& message) {
   Napi::RangeError error = Napi::RangeError::New(env, message);
-  error.Value().Set("code", "ERR_NODE_STORM_LIMIT");
+  error.Value().Set("code", "ERR_NODE_STORMLIB_LIMIT");
   error.ThrowAsJavaScriptException();
 }
 
@@ -649,7 +649,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
 
     if (bytesRead != lowSize) {
       Napi::Error error = Napi::Error::New(env, "SFileReadFile returned fewer bytes than expected");
-      error.Value().Set("code", "ERR_NODE_STORM_SHORT_READ");
+      error.Value().Set("code", "ERR_NODE_STORMLIB_SHORT_READ");
       error.ThrowAsJavaScriptException();
       return env.Null();
     }

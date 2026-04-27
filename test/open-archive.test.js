@@ -100,7 +100,7 @@ test('preserves native error metadata for asynchronous reads', async () => {
 
 test('extracts files from an archive', () => {
   const contents = storm.readFile(saveAndLoadMap, 'war3map.w3i')
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-storm-'))
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-stormlib-'))
 
   try {
     const outputPath = path.join(tempDir, 'war3map.w3i')

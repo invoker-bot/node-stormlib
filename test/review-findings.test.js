@@ -59,7 +59,7 @@ test('listFiles enforces a caller-provided maximum entry limit', () => {
 })
 
 test('extractFile refuses to write outside an allowed output directory', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-storm-review-'))
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-stormlib-review-'))
   const allowedRoot = path.join(tempDir, 'allowed')
   const escapedOutputPath = path.join(tempDir, 'escaped.w3i')
 

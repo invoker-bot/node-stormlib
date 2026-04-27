@@ -18,7 +18,7 @@ function runMpq(args, options = {}) {
 }
 
 function withTempDir(callback) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-storm-cli-'))
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'node-stormlib-cli-'))
 
   try {
     return callback(tempDir)
