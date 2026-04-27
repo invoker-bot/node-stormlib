@@ -29,6 +29,10 @@ tree.
 | Read files from a worker thread | `readFileAsync()` |
 | Create a readable stream for a file | `createReadStream()` |
 | Extract archive files to disk | `extractFile()` |
+| Create new MPQ archives | `createArchive()` |
+| Add compressed local files | `addFile()` |
+| Write compressed Buffer contents | `writeFile()` |
+| Compact writable archives | `compactArchive()` |
 
 ## Requirements
 
@@ -148,6 +152,52 @@ storm.extractFile('map.w3x', 'war3map.w3i', 'out/war3map.w3i', { rootDir: 'out' 
 StormLib failures include a stable JavaScript `error.code` such as
 `STORM_2`, plus the numeric `error.stormCode`.
 
+### `createArchive(archivePath, options)`
+
+Creates a new MPQ archive. Pass `rootDir` to restrict the output path and
+`overwrite: true` when replacing an existing archive is intended.
+
+```js
+storm.createArchive('out/map.mpq', {
+  rootDir: 'out',
+  maxFileCount: 64,
+  version: 1,
+})
+```
+
+### `addFile(archivePath, sourcePath, archivedName, options)`
+
+Adds a local file to an existing archive. By default files are compressed with
+zlib and existing entries are replaced.
+
+```js
+storm.addFile('out/map.mpq', 'assets/war3map.w3i', 'war3map.w3i', {
+  rootDir: 'out',
+  sourceRootDir: 'assets',
+  maxBytes: 1024 * 1024,
+  compression: storm.compression.zlib,
+})
+```
+
+### `writeFile(archivePath, archivedName, data, options)`
+
+Writes a `Buffer` directly into an existing archive.
+
+```js
+storm.writeFile('out/map.mpq', 'scripts/main.j', Buffer.from('function main takes nothing returns nothing'), {
+  rootDir: 'out',
+  compression: storm.compression.zlib,
+})
+```
+
+### `compactArchive(archivePath, options)`
+
+Compacts a writable archive after edits.
+
+```js
+storm.compactArchive('out/map.mpq', { rootDir: 'out' })
+```
+
 ## Development
 
 ```sh
@@ -173,6 +223,7 @@ npm run test:review
 |-- test/fixtures/maps          MPQ map fixtures tracked by Git LFS
 |-- test/open-archive.test.js   Unit tests for the public API
 |-- test/review-findings.test.js Regression tests for review findings
+|-- test/write-archive.test.js  Unit tests for MPQ creation and compression
 `-- third_party/StormLib        Vendored StormLib source
 ```
 

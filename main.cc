@@ -181,6 +181,164 @@ bool ReadSafeIntegerOption(
   return true;
 }
 
+bool ReadBooleanOption(
+    Napi::Env env,
+    const Napi::Object& options,
+    const char* name,
+    bool defaultValue,
+    bool* value) {
+  Napi::Value option = options.Get(name);
+  if (option.IsUndefined() || option.IsNull()) {
+    *value = defaultValue;
+    return true;
+  }
+
+  if (!option.IsBoolean()) {
+    Napi::TypeError::New(env, std::string(name) + " must be a boolean")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  *value = option.As<Napi::Boolean>().Value();
+  return true;
+}
+
+bool ReadDwordOption(
+    Napi::Env env,
+    const Napi::Object& options,
+    const char* name,
+    uint64_t defaultValue,
+    uint64_t minValue,
+    uint64_t maxValue,
+    DWORD* value) {
+  bool hasValue = false;
+  uint64_t parsedValue = 0;
+  if (!ReadSafeIntegerOption(env, options, name, &hasValue, &parsedValue)) {
+    return false;
+  }
+
+  if (!hasValue) {
+    parsedValue = defaultValue;
+  }
+
+  if (parsedValue < minValue || parsedValue > maxValue) {
+    std::ostringstream message;
+    message << name << " must be between " << minValue << " and " << maxValue;
+    Napi::RangeError::New(env, message.str()).ThrowAsJavaScriptException();
+    return false;
+  }
+
+  *value = static_cast<DWORD>(parsedValue);
+  return true;
+}
+
+bool ReadCreateArchiveFlags(
+    Napi::Env env,
+    const Napi::Object& options,
+    DWORD* createFlags) {
+  DWORD version = 1;
+  if (!ReadDwordOption(env, options, "version", 1, 1, 4, &version)) {
+    return false;
+  }
+
+  switch (version) {
+    case 1:
+      *createFlags = MPQ_CREATE_ARCHIVE_V1;
+      return true;
+    case 2:
+      *createFlags = MPQ_CREATE_ARCHIVE_V2;
+      return true;
+    case 3:
+      *createFlags = MPQ_CREATE_ARCHIVE_V3;
+      return true;
+    case 4:
+      *createFlags = MPQ_CREATE_ARCHIVE_V4;
+      return true;
+    default:
+      Napi::RangeError::New(env, "version must be between 1 and 4")
+          .ThrowAsJavaScriptException();
+      return false;
+  }
+}
+
+bool ReadCompressionOption(
+    Napi::Env env,
+    const Napi::Object& options,
+    DWORD* fileFlags,
+    DWORD* compression) {
+  *fileFlags = 0;
+  *compression = 0;
+
+  Napi::Value option = options.Get("compression");
+  if (option.IsUndefined() || option.IsNull()) {
+    *fileFlags = MPQ_FILE_COMPRESS;
+    *compression = MPQ_COMPRESSION_ZLIB;
+    return true;
+  }
+
+  if (option.IsBoolean()) {
+    if (option.As<Napi::Boolean>().Value()) {
+      *fileFlags = MPQ_FILE_COMPRESS;
+      *compression = MPQ_COMPRESSION_ZLIB;
+    }
+    return true;
+  }
+
+  if (option.IsNumber()) {
+    bool hasValue = false;
+    uint64_t numericCompression = 0;
+    if (!ReadSafeIntegerOption(env, options, "compression", &hasValue, &numericCompression)) {
+      return false;
+    }
+
+    if (numericCompression > std::numeric_limits<DWORD>::max()) {
+      Napi::RangeError::New(env, "compression must fit in a 32-bit integer")
+          .ThrowAsJavaScriptException();
+      return false;
+    }
+
+    if (numericCompression != 0) {
+      *fileFlags = MPQ_FILE_COMPRESS;
+      *compression = static_cast<DWORD>(numericCompression);
+    }
+    return true;
+  }
+
+  if (!option.IsString()) {
+    Napi::TypeError::New(env, "compression must be a string, number, or boolean")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  std::string compressionName = option.As<Napi::String>().Utf8Value();
+  if (compressionName == "none") {
+    return true;
+  }
+  if (compressionName == "implode") {
+    *fileFlags = MPQ_FILE_IMPLODE;
+    return true;
+  }
+
+  *fileFlags = MPQ_FILE_COMPRESS;
+  if (compressionName == "zlib") {
+    *compression = MPQ_COMPRESSION_ZLIB;
+  } else if (compressionName == "pkware") {
+    *compression = MPQ_COMPRESSION_PKWARE;
+  } else if (compressionName == "bzip2") {
+    *compression = MPQ_COMPRESSION_BZIP2;
+  } else if (compressionName == "sparse") {
+    *compression = MPQ_COMPRESSION_SPARSE;
+  } else if (compressionName == "lzma") {
+    *compression = MPQ_COMPRESSION_LZMA;
+  } else {
+    Napi::RangeError::New(env, "compression must be one of none, zlib, pkware, bzip2, sparse, lzma, or implode")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  return true;
+}
+
 bool ReadListFilesArguments(
     const Napi::CallbackInfo& info,
     std::string* archivePath,
@@ -301,6 +459,10 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
       InstanceMethod("hasFile", &NodeStormAddon::HasFile),
       InstanceMethod("readFile", &NodeStormAddon::ReadFile),
       InstanceMethod("extractFile", &NodeStormAddon::ExtractFile),
+      InstanceMethod("createArchive", &NodeStormAddon::CreateArchive),
+      InstanceMethod("addFile", &NodeStormAddon::AddFile),
+      InstanceMethod("writeFile", &NodeStormAddon::WriteFile),
+      InstanceMethod("compactArchive", &NodeStormAddon::CompactArchive),
     });
   }
 
@@ -522,6 +684,183 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
             nativeOutputPath.c_str(),
             SFILE_OPEN_FROM_MPQ)) {
       ThrowStormError(env, "SFileExtractFile");
+      return env.Null();
+    }
+
+    return Napi::Boolean::New(env, true);
+  }
+
+  Napi::Value CreateArchive(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    std::string archivePath;
+    Napi::Object options;
+    if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
+        !ReadOptionalOptionsArgument(info, 1, "options", &options)) {
+      return env.Null();
+    }
+
+    DWORD maxFileCount = 0;
+    DWORD createFlags = 0;
+    if (!ReadDwordOption(
+            env,
+            options,
+            "maxFileCount",
+            HASH_TABLE_SIZE_DEFAULT,
+            HASH_TABLE_SIZE_MIN,
+            HASH_TABLE_SIZE_MAX,
+            &maxFileCount) ||
+        !ReadCreateArchiveFlags(env, options, &createFlags)) {
+      return env.Null();
+    }
+
+    NativePath nativeArchivePath;
+    if (!Utf8ToNativePath(env, archivePath, &nativeArchivePath)) {
+      return env.Null();
+    }
+
+    HANDLE archive = nullptr;
+    if (!SFileCreateArchive(nativeArchivePath.c_str(), createFlags, maxFileCount, &archive)) {
+      ThrowStormError(env, "SFileCreateArchive");
+      return env.Null();
+    }
+
+    ArchiveHandle archiveHandle(archive);
+    return Napi::Boolean::New(env, true);
+  }
+
+  Napi::Value AddFile(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    std::string archivePath;
+    std::string sourcePath;
+    std::string archivedName;
+    Napi::Object options;
+    if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
+        !ReadStringArgument(info, 1, "sourcePath", &sourcePath) ||
+        !ReadStringArgument(info, 2, "archivedName", &archivedName) ||
+        !ReadOptionalOptionsArgument(info, 3, "options", &options)) {
+      return env.Null();
+    }
+
+    DWORD fileFlags = 0;
+    DWORD compression = 0;
+    bool replaceExisting = true;
+    if (!ReadCompressionOption(env, options, &fileFlags, &compression) ||
+        !ReadBooleanOption(env, options, "replaceExisting", true, &replaceExisting)) {
+      return env.Null();
+    }
+
+    if (replaceExisting) {
+      fileFlags |= MPQ_FILE_REPLACEEXISTING;
+    }
+
+    ArchiveHandle archive = OpenArchiveOrThrow(env, archivePath);
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+
+    NativePath nativeSourcePath;
+    if (!Utf8ToNativePath(env, sourcePath, &nativeSourcePath)) {
+      return env.Null();
+    }
+
+    if (!SFileAddFileEx(
+            archive.get(),
+            nativeSourcePath.c_str(),
+            archivedName.c_str(),
+            fileFlags,
+            compression,
+            MPQ_COMPRESSION_NEXT_SAME)) {
+      ThrowStormError(env, "SFileAddFileEx");
+      return env.Null();
+    }
+
+    return Napi::Boolean::New(env, true);
+  }
+
+  Napi::Value WriteFile(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    std::string archivePath;
+    std::string archivedName;
+    Napi::Object options;
+    if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
+        !ReadStringArgument(info, 1, "archivedName", &archivedName)) {
+      return env.Null();
+    }
+
+    if (info.Length() <= 2 || !info[2].IsBuffer()) {
+      Napi::TypeError::New(env, "data must be a Buffer")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
+
+    if (!ReadOptionalOptionsArgument(info, 3, "options", &options)) {
+      return env.Null();
+    }
+
+    Napi::Buffer<uint8_t> data = info[2].As<Napi::Buffer<uint8_t>>();
+    if (data.Length() > std::numeric_limits<DWORD>::max()) {
+      ThrowCodedRangeError(env, "data is too large to write into an MPQ file");
+      return env.Null();
+    }
+
+    DWORD fileFlags = 0;
+    DWORD compression = 0;
+    bool replaceExisting = true;
+    if (!ReadCompressionOption(env, options, &fileFlags, &compression) ||
+        !ReadBooleanOption(env, options, "replaceExisting", true, &replaceExisting)) {
+      return env.Null();
+    }
+
+    if (replaceExisting) {
+      fileFlags |= MPQ_FILE_REPLACEEXISTING;
+    }
+
+    ArchiveHandle archive = OpenArchiveOrThrow(env, archivePath);
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+
+    HANDLE file = nullptr;
+    if (!SFileCreateFile(
+            archive.get(),
+            archivedName.c_str(),
+            0,
+            static_cast<DWORD>(data.Length()),
+            SFileGetLocale(),
+            fileFlags,
+            &file)) {
+      ThrowStormError(env, "SFileCreateFile");
+      return env.Null();
+    }
+
+    if (!SFileWriteFile(file, data.Data(), static_cast<DWORD>(data.Length()), compression)) {
+      ThrowStormError(env, "SFileWriteFile");
+      SFileCloseFile(file);
+      return env.Null();
+    }
+
+    if (!SFileFinishFile(file)) {
+      ThrowStormError(env, "SFileFinishFile");
+      return env.Null();
+    }
+
+    return Napi::Boolean::New(env, true);
+  }
+
+  Napi::Value CompactArchive(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    std::string archivePath;
+    if (!ReadStringArgument(info, 0, "archivePath", &archivePath)) {
+      return env.Null();
+    }
+
+    ArchiveHandle archive = OpenArchiveOrThrow(env, archivePath);
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+
+    if (!SFileCompactArchive(archive.get(), nullptr, false)) {
+      ThrowStormError(env, "SFileCompactArchive");
       return env.Null();
     }
 

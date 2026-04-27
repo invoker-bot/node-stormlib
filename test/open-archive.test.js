@@ -30,6 +30,11 @@ test('exports the MPQ archive API', () => {
   assert.strictEqual(typeof storm.readFileAsync, 'function')
   assert.strictEqual(typeof storm.createReadStream, 'function')
   assert.strictEqual(typeof storm.extractFile, 'function')
+  assert.strictEqual(typeof storm.createArchive, 'function')
+  assert.strictEqual(typeof storm.addFile, 'function')
+  assert.strictEqual(typeof storm.writeFile, 'function')
+  assert.strictEqual(typeof storm.compactArchive, 'function')
+  assert.strictEqual(typeof storm.compression, 'object')
 })
 
 test('opens Warcraft III map archives and reads archive metadata', () => {

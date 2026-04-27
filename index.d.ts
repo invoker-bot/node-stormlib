@@ -33,6 +33,51 @@ export interface ExtractFileOptions {
   rootDir?: string
 }
 
+export type Compression =
+  | 'none'
+  | 'zlib'
+  | 'pkware'
+  | 'bzip2'
+  | 'sparse'
+  | 'lzma'
+  | 'implode'
+
+export interface CreateArchiveOptions {
+  rootDir?: string
+  overwrite?: boolean
+  maxFileCount?: number
+  version?: 1 | 2 | 3 | 4
+}
+
+export interface AddFileOptions {
+  rootDir?: string
+  sourceRootDir?: string
+  maxBytes?: number
+  compression?: Compression | number | boolean
+  replaceExisting?: boolean
+}
+
+export interface WriteFileOptions {
+  rootDir?: string
+  maxBytes?: number
+  compression?: Compression | number | boolean
+  replaceExisting?: boolean
+}
+
+export interface CompactArchiveOptions {
+  rootDir?: string
+}
+
+export const compression: Readonly<{
+  none: 'none'
+  zlib: 'zlib'
+  pkware: 'pkware'
+  bzip2: 'bzip2'
+  sparse: 'sparse'
+  lzma: 'lzma'
+  implode: 'implode'
+}>
+
 export function getArchiveInfo(archivePath: string): ArchiveInfo
 export function listFiles(
   archivePath: string,
@@ -64,4 +109,24 @@ export function extractFile(
   fileName: string,
   outputPath: string,
   options?: ExtractFileOptions,
+): boolean
+export function createArchive(
+  archivePath: string,
+  options?: CreateArchiveOptions,
+): boolean
+export function addFile(
+  archivePath: string,
+  sourcePath: string,
+  archivedName: string,
+  options?: AddFileOptions,
+): boolean
+export function writeFile(
+  archivePath: string,
+  archivedName: string,
+  data: Buffer,
+  options?: WriteFileOptions,
+): boolean
+export function compactArchive(
+  archivePath: string,
+  options?: CompactArchiveOptions,
 ): boolean

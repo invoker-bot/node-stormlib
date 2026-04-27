@@ -2,13 +2,13 @@
 
 ## Project Structure & Module Organization
 
-This repository is a small Node.js native addon for working with Blizzard MPQ archive formats.
+This repository is a small Node.js native addon for reading and writing Blizzard MPQ archive formats.
 
 - `index.js` is the package entry point; `native.js` loads prebuilt addons before falling back to `bindings`.
 - `main.cc` contains the Node-API addon implementation.
 - `CMakeLists.txt` defines the native build target, currently `NodeStorm`.
 - `cmake/` contains helper modules for CMake.js and `node-addon-api` integration.
-- `test/` contains Node.js unit tests and Git LFS MPQ fixtures under `test/fixtures/maps/`.
+- `test/` contains Node.js unit tests, including write/compression coverage, and Git LFS MPQ fixtures under `test/fixtures/maps/`.
 - `package.json` and `package-lock.json` define the Node package metadata and runtime dependencies.
 
 Keep new C++ sources near `main.cc` until the addon grows enough to justify a `src/` directory. Add generated build output only under ignored paths such as `build/`, `out/`, or `dist/`.

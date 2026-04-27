@@ -128,6 +128,13 @@ test('package exposes non-blocking archive read APIs', () => {
   assert.strictEqual(typeof storm.createReadStream, 'function')
 })
 
+test('package exposes archive creation and compressed write APIs', () => {
+  assert.strictEqual(typeof storm.createArchive, 'function')
+  assert.strictEqual(typeof storm.addFile, 'function')
+  assert.strictEqual(typeof storm.writeFile, 'function')
+  assert.strictEqual(typeof storm.compactArchive, 'function')
+})
+
 test('package has a prebuilt binary distribution path', () => {
   const allDependencies = {
     ...packageJson.dependencies,
