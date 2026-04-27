@@ -86,12 +86,25 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve npm dist tag
+        id: npm-dist-tag
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+
+          if [[ "$package_version" == *-* ]]; then
+            prerelease="${package_version#*-}"
+            echo "tag=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Preview package
         if: steps.npm-version.outputs.published == 'false'
         run: npm pack --dry-run
 
       - name: Publish package
         if: steps.npm-version.outputs.published == 'false'
-        run: npm publish --access public
+        run: npm publish --access public --tag "${{ steps.npm-dist-tag.outputs.tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

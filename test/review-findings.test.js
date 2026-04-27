@@ -145,6 +145,17 @@ test('CI validates native builds on Windows, Linux, and macOS', () => {
   assert.match(workflow, /macos-latest/)
 })
 
+test('CI publishes prerelease versions with an explicit npm dist tag', () => {
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github', 'workflows', 'ci-publish.yml'),
+    'utf8',
+  )
+
+  assert.match(workflow, /Resolve npm dist tag/)
+  assert.match(workflow, /package_version.*== \*-\*/)
+  assert.match(workflow, /npm publish --access public --tag/)
+})
+
 test('package exposes TypeScript declarations', () => {
   assert.ok(packageJson.types || packageJson.typings, 'expected a types or typings field')
 })
