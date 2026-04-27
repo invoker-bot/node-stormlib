@@ -67,6 +67,30 @@ console.log(files.map(file => file.name))
 console.log(mapInfo.length)
 ```
 
+## CLI
+
+Installing the package exposes an `mpq` command for common archive tasks.
+
+```sh
+mpq info map.w3x
+mpq list map.w3x "war3map.*"
+mpq extract map.w3x war3map.w3i out/war3map.w3i --root out
+mpq unpack map.w3x out/map --max-bytes 10485760
+```
+
+Create and compress archives from files or directories:
+
+```sh
+mpq create out/map.mpq --root out --overwrite --max-files 64
+mpq add out/map.mpq assets/war3map.w3i war3map.w3i --source-root assets --compression zlib
+mpq pack assets out/assets.mpq --root out --overwrite --compression zlib
+mpq compact out/assets.mpq --root out
+```
+
+Useful aliases include `mpq ls`, `mpq x`, `mpq compress`, and `mpq decompress`.
+Bulk extraction validates archive entry names before writing, and write commands
+support `--root`, `--source-root`, and `--max-bytes` safety limits.
+
 ## API Reference
 
 ### `getArchiveInfo(archivePath)`

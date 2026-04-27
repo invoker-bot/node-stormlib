@@ -5,6 +5,7 @@
 This repository is a small Node.js native addon for reading and writing Blizzard MPQ archive formats.
 
 - `index.js` is the package entry point; `native.js` loads prebuilt addons before falling back to `bindings`.
+- `bin/mpq.js` provides the installable `mpq` CLI for extraction and compression workflows.
 - `main.cc` contains the Node-API addon implementation.
 - `CMakeLists.txt` defines the native build target, currently `NodeStorm`.
 - `cmake/` contains helper modules for CMake.js and `node-addon-api` integration.

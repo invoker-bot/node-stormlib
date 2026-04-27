@@ -4,6 +4,9 @@
   "description": "A library to process Blizzard game MPQ format archives.",
   "main": "index.js",
   "types": "index.d.ts",
+  "bin": {
+    "mpq": "bin/mpq.js"
+  },
   "binary": {
     "module_name": "NodeStorm",
     "module_path": "prebuilds/{platform}-{arch}",
@@ -12,6 +15,7 @@
     ]
   },
   "files": [
+    "bin/",
     "index.d.ts",
     "index.js",
     "native.js",

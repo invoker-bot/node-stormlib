@@ -135,6 +135,11 @@ test('package exposes archive creation and compressed write APIs', () => {
   assert.strictEqual(typeof storm.compactArchive, 'function')
 })
 
+test('package exposes the mpq command line executable', () => {
+  assert.strictEqual(packageJson.bin && packageJson.bin.mpq, 'bin/mpq.js')
+  assert.ok(fs.existsSync(path.join(repoRoot, 'bin', 'mpq.js')))
+})
+
 test('package has a prebuilt binary distribution path', () => {
   const allDependencies = {
     ...packageJson.dependencies,
