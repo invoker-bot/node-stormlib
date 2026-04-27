@@ -1,3 +1,3 @@
 'use strict'
 
-const nodeStormAddon = require('bindings')('NodeStorm.node');
+module.exports = require('bindings')('NodeStorm.node')
