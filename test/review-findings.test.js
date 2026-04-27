@@ -107,6 +107,32 @@ test('StormLib errors expose a stable JavaScript error code', () => {
   )
 })
 
+test('native addon uses StormLib error state APIs for cross-platform builds', () => {
+  const source = fs.readFileSync(path.join(repoRoot, 'main.cc'), 'utf8')
+
+  assert.doesNotMatch(source, /\bGetLastError\s*\(/)
+  assert.match(source, /\bSErrGetLastError\s*\(/)
+})
+
+test('CMake generates node.lib for MSVC Node-API builds', () => {
+  const cmake = fs.readFileSync(path.join(repoRoot, 'CMakeLists.txt'), 'utf8')
+
+  assert.match(cmake, /MSVC\s+AND\s+CMAKE_JS_NODELIB_DEF\s+AND\s+CMAKE_JS_NODELIB_TARGET/)
+  assert.match(cmake, /execute_process\(/)
+  assert.match(cmake, /\/def:\$\{CMAKE_JS_NODELIB_DEF\}/)
+  assert.match(cmake, /\/out:\$\{CMAKE_JS_NODELIB_TARGET\}/)
+})
+
+test('vendored StormLib is built as position-independent code for Linux addons', () => {
+  const cmake = fs.readFileSync(path.join(repoRoot, 'CMakeLists.txt'), 'utf8')
+  const picIndex = cmake.indexOf('CMAKE_POSITION_INDEPENDENT_CODE')
+  const stormIndex = cmake.indexOf('add_subdirectory(third_party/StormLib')
+
+  assert.notStrictEqual(picIndex, -1)
+  assert.notStrictEqual(stormIndex, -1)
+  assert.ok(picIndex < stormIndex, 'PIC must be enabled before adding StormLib')
+})
+
 test('CI validates native builds on Windows, Linux, and macOS', () => {
   const workflow = fs.readFileSync(
     path.join(repoRoot, '.github', 'workflows', 'ci-publish.yml'),

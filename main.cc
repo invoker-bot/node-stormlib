@@ -95,7 +95,7 @@ std::string StormErrorMessage(const std::string& action, DWORD errorCode) {
 }
 
 void ThrowStormError(Napi::Env env, const std::string& action) {
-  DWORD errorCode = GetLastError();
+  DWORD errorCode = SErrGetLastError();
   Napi::Error error = Napi::Error::New(env, StormErrorMessage(action, errorCode));
   error.Value().Set("code", StormErrorCode(errorCode));
   error.Value().Set("stormCode", Napi::Number::New(env, errorCode));
@@ -529,7 +529,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     SFILE_FIND_DATA data = {};
     HANDLE search = SFileFindFirstFile(archive.get(), mask.c_str(), &data, nullptr);
     if (search == nullptr) {
-      DWORD errorCode = GetLastError();
+      DWORD errorCode = SErrGetLastError();
       if (errorCode == ERROR_NO_MORE_FILES || errorCode == ERROR_FILE_NOT_FOUND) {
         return Napi::Array::New(env);
       }
@@ -554,7 +554,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     } while (SFileFindNextFile(search, &data));
     exhausted = true;
 
-    DWORD errorCode = GetLastError();
+    DWORD errorCode = SErrGetLastError();
     if (exhausted && errorCode != ERROR_NO_MORE_FILES) {
       ThrowStormError(env, "SFileFindNextFile");
       return env.Null();
@@ -579,7 +579,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
 
     HANDLE file = nullptr;
     if (!SFileOpenFileEx(archive.get(), fileName.c_str(), SFILE_OPEN_FROM_MPQ, &file)) {
-      DWORD errorCode = GetLastError();
+      DWORD errorCode = SErrGetLastError();
       if (errorCode == ERROR_FILE_NOT_FOUND) {
         return Napi::Boolean::New(env, false);
       }
@@ -623,7 +623,7 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
 
     DWORD highSize = 0;
     DWORD lowSize = SFileGetFileSize(fileHandle.get(), &highSize);
-    if (lowSize == SFILE_INVALID_SIZE && GetLastError() != ERROR_SUCCESS) {
+    if (lowSize == SFILE_INVALID_SIZE && SErrGetLastError() != ERROR_SUCCESS) {
       ThrowStormError(env, "SFileGetFileSize");
       return env.Null();
     }

@@ -6,7 +6,14 @@ include(CMakeJSSetup)
 include(CMakeJSNodeAddonAPI)
 include(CMakeJSAddLibrary)
 
+if(MSVC AND CMAKE_JS_NODELIB_DEF AND CMAKE_JS_NODELIB_TARGET)
+  execute_process(
+    COMMAND ${CMAKE_AR} /def:${CMAKE_JS_NODELIB_DEF} /out:${CMAKE_JS_NODELIB_TARGET} ${CMAKE_STATIC_LINKER_FLAGS}
+  )
+endif()
+
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build vendored libraries as static libraries" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(STORM_BUILD_TESTS OFF CACHE BOOL "Disable vendored StormLib tests" FORCE)
 set(STORM_SKIP_INSTALL ON CACHE BOOL "Do not install vendored StormLib" FORCE)
 set(STORM_USE_BUNDLED_LIBRARIES ON CACHE BOOL "Use StormLib bundled compression libraries" FORCE)
