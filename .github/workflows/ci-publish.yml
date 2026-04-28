@@ -163,7 +163,8 @@ jobs:
           if [ "$dist_tag" != "latest" ]; then
             current_latest="$(npm view "$package_name" dist-tags.latest 2>/dev/null || true)"
             if [[ "$current_latest" == *-* ]]; then
-              npm dist-tag rm "$package_name" latest
+              npm dist-tag rm "$package_name" latest ||
+                echo "npm registry refused to remove latest tag $current_latest; leaving it unchanged."
             fi
           fi
         env:
