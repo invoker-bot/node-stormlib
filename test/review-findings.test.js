@@ -36,13 +36,28 @@ test('published package excludes test fixtures and MPQ map binaries', () => {
 test('published package has build tools available during production install', () => {
   const installScript = packageJson.scripts && packageJson.scripts.install
   const buildScript = packageJson.scripts && packageJson.scripts.build
-  const installsByBuilding = /npm run build|cmake-js/.test(installScript || '')
+  const installSource = installScript && installScript.startsWith('node ')
+    ? fs.readFileSync(path.join(repoRoot, installScript.slice('node '.length)), 'utf8')
+    : installScript || ''
+  const installsByBuilding = /npm run build|cmake-js/.test(installSource) ||
+    installSource.includes("'run', 'build'") ||
+    installSource.includes('"run", "build"')
   const buildUsesCmakeJs = /cmake-js/.test(buildScript || '')
 
   assert.ok(
     !installsByBuilding || !buildUsesCmakeJs || packageJson.dependencies['cmake-js'],
     'install builds with cmake-js, but cmake-js is only listed in devDependencies',
   )
+})
+
+test('package metadata is explicit for CommonJS and npm consumers', () => {
+  assert.strictEqual(packageJson.type, 'commonjs')
+  assert.strictEqual(packageJson.engines && packageJson.engines.node, '>=18')
+  assert.ok(packageJson.exports && packageJson.exports['.'])
+  assert.strictEqual(packageJson.exports['.'].require, './index.js')
+  assert.strictEqual(packageJson.exports['.'].types, './index.d.ts')
+  assert.ok(packageJson.bugs && packageJson.bugs.url)
+  assert.ok(packageJson.homepage)
 })
 
 test('readFile enforces a caller-provided maximum byte limit', () => {
@@ -154,6 +169,8 @@ test('CI publishes prerelease versions with an explicit npm dist tag', () => {
   assert.match(workflow, /Resolve npm dist tag/)
   assert.match(workflow, /package_version.*== \*-\*/)
   assert.match(workflow, /npm publish --access public --tag/)
+  assert.match(workflow, /npm dist-tag add/)
+  assert.match(workflow, /npm dist-tag rm "\$package_name" latest/)
 })
 
 test('package exposes TypeScript declarations', () => {
@@ -163,6 +180,8 @@ test('package exposes TypeScript declarations', () => {
 test('package exposes non-blocking archive read APIs', () => {
   assert.strictEqual(typeof storm.readFileAsync, 'function')
   assert.strictEqual(typeof storm.createReadStream, 'function')
+  assert.strictEqual(typeof storm.getFileInfo, 'function')
+  assert.match(fs.readFileSync(path.join(repoRoot, 'index.js'), 'utf8'), /readFileChunk/)
 })
 
 test('package exposes archive creation and compressed write APIs', () => {
@@ -192,4 +211,24 @@ test('package has a prebuilt binary distribution path', () => {
   assert.match(nativeLoader, /prebuilds/)
   assert.match(nativeLoader, /process\.platform/)
   assert.match(nativeLoader, /process\.arch/)
+
+  const installScript = fs.readFileSync(path.join(repoRoot, 'scripts', 'install.js'), 'utf8')
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github', 'workflows', 'ci-publish.yml'),
+    'utf8',
+  )
+  assert.match(installScript, /prebuiltPath/)
+  assert.match(installScript, /NODE_STORMLIB_BUILD_FROM_SOURCE/)
+  assert.match(workflow, /Upload prebuilt addon/)
+  assert.match(workflow, /Download prebuilt addons/)
+})
+
+test('CLI has default safety limits with an explicit no-limits escape hatch', () => {
+  const cli = fs.readFileSync(path.join(repoRoot, 'bin', 'mpq.js'), 'utf8')
+
+  assert.match(cli, /DEFAULT_MAX_BYTES/)
+  assert.match(cli, /DEFAULT_MAX_ENTRIES/)
+  assert.match(cli, /no-limits/)
+  assert.match(cli, /getFileInfo/)
+  assert.match(cli, /ensureArchiveFileWithinLimit/)
 })

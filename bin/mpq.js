@@ -5,6 +5,9 @@ const fs = require('fs')
 const path = require('path')
 const storm = require('..')
 
+const DEFAULT_MAX_BYTES = 512 * 1024 * 1024
+const DEFAULT_MAX_ENTRIES = 10000
+
 const valueOptions = new Set([
   'compression',
   'max-bytes',
@@ -17,21 +20,26 @@ const valueOptions = new Set([
   'source-root',
   'version',
 ])
-const booleanOptions = new Set(['help', 'json', 'overwrite', 'no-replace'])
+const booleanOptions = new Set(['help', 'json', 'overwrite', 'no-limits', 'no-replace'])
 
 function help() {
   return `Usage:
   mpq info <archive> [--json]
-  mpq list <archive> [mask] [--json] [--max-entries <n>]
-  mpq extract <archive> <file> <output> [--root <dir>] [--max-bytes <n>]
-  mpq unpack <archive> <output-dir> [--mask <mask>] [--max-entries <n>] [--max-bytes <n>]
+  mpq list <archive> [mask] [--json] [--max-entries <n>] [--no-limits]
+  mpq extract <archive> <file> <output> [--root <dir>] [--max-bytes <n>] [--no-limits]
+  mpq unpack <archive> <output-dir> [--mask <mask>] [--max-entries <n>] [--max-bytes <n>] [--no-limits]
   mpq create <archive> [--root <dir>] [--overwrite] [--max-files <n>] [--version <1-4>]
-  mpq add <archive> <source> <name> [--root <dir>] [--source-root <dir>] [--compression <name>] [--max-bytes <n>] [--no-replace]
-  mpq pack <source-dir> <archive> [--root <dir>] [--overwrite] [--compression <name>] [--max-bytes <n>] [--prefix <path>]
+  mpq add <archive> <source> <name> [--root <dir>] [--source-root <dir>] [--compression <name>] [--max-bytes <n>] [--no-limits] [--no-replace]
+  mpq pack <source-dir> <archive> [--root <dir>] [--overwrite] [--compression <name>] [--max-bytes <n>] [--prefix <path>] [--no-limits]
   mpq compact <archive> [--root <dir>]
 
 Aliases:
   ls=list, x=extract, extract-all=unpack, decompress=unpack, compress=pack
+
+Safety defaults:
+  --max-bytes defaults to ${DEFAULT_MAX_BYTES} bytes for reads and writes.
+  --max-entries defaults to ${DEFAULT_MAX_ENTRIES} for list and unpack.
+  Use --no-limits to disable these defaults, or pass explicit limits to tighten them.
 
 Compression:
   none, zlib, pkware, bzip2, sparse, lzma, implode
@@ -61,6 +69,9 @@ function setOption(options, name, value) {
       break
     case 'source-root':
       options.sourceRoot = value
+      break
+    case 'no-limits':
+      options.noLimits = value
       break
     default:
       options[name] = value
@@ -133,6 +144,23 @@ function parseNumber(value, name) {
   return number
 }
 
+function limitOption(options, fieldName, optionName, defaultValue) {
+  const explicitValue = parseNumber(options[fieldName], optionName)
+  if (explicitValue !== undefined) {
+    return explicitValue
+  }
+
+  return options.noLimits ? undefined : defaultValue
+}
+
+function maxBytesLimit(options) {
+  return limitOption(options, 'maxBytes', 'max-bytes', DEFAULT_MAX_BYTES)
+}
+
+function maxEntriesLimit(options) {
+  return limitOption(options, 'maxEntries', 'max-entries', DEFAULT_MAX_ENTRIES)
+}
+
 function requireArgs(command, positionals, count) {
   if (positionals.length < count) {
     fail(`${command} expects ${count} argument${count === 1 ? '' : 's'}\n\n${help()}`)
@@ -152,7 +180,7 @@ function addOptions(options, sourceRoot) {
   return {
     rootDir: options.root,
     sourceRootDir: options.sourceRoot || sourceRoot,
-    maxBytes: parseNumber(options.maxBytes, 'max-bytes'),
+    maxBytes: maxBytesLimit(options),
     compression: options.compression,
     replaceExisting: options.replaceExisting,
   }
@@ -160,7 +188,7 @@ function addOptions(options, sourceRoot) {
 
 function readOptions(options) {
   return {
-    maxBytes: parseNumber(options.maxBytes, 'max-bytes'),
+    maxBytes: maxBytesLimit(options),
   }
 }
 
@@ -194,6 +222,17 @@ function archiveNameToPath(rootDir, archiveName) {
   }
 
   return ensureInside(rootDir, path.join(rootDir, ...segments))
+}
+
+function ensureArchiveFileWithinLimit(archivePath, fileName, maxBytes) {
+  if (maxBytes === undefined) {
+    return
+  }
+
+  const fileInfo = storm.getFileInfo(archivePath, fileName)
+  if (fileInfo.size > maxBytes) {
+    fail(`${fileName} exceeds max-bytes limit (${fileInfo.size} > ${maxBytes})`)
+  }
 }
 
 function walkFiles(rootDir, skipPath, results = []) {
@@ -238,7 +277,7 @@ function commandList(args, options) {
   requireArgs('list', args, 1)
   const mask = args[1] || options.mask || '*'
   const files = storm.listFiles(args[0], mask, {
-    maxEntries: parseNumber(options.maxEntries, 'max-entries'),
+    maxEntries: maxEntriesLimit(options),
   })
 
   if (options.json) {
@@ -256,14 +295,11 @@ function commandExtract(args, options) {
   const [archivePath, fileName, outputPath] = args
   const rootDir = options.root ? path.resolve(options.root) : path.dirname(path.resolve(outputPath))
   const safeOutputPath = ensureInside(rootDir, outputPath)
+  const maxBytes = maxBytesLimit(options)
 
   fs.mkdirSync(path.dirname(safeOutputPath), { recursive: true })
-  if (options.maxBytes !== undefined) {
-    const contents = storm.readFile(archivePath, fileName, readOptions(options))
-    fs.writeFileSync(safeOutputPath, contents)
-  } else {
-    storm.extractFile(archivePath, fileName, safeOutputPath, rootOptions(options, rootDir))
-  }
+  ensureArchiveFileWithinLimit(archivePath, fileName, maxBytes)
+  storm.extractFile(archivePath, fileName, safeOutputPath, rootOptions(options, rootDir))
 
   process.stdout.write(`Extracted ${fileName} to ${safeOutputPath}\n`)
 }
@@ -274,7 +310,7 @@ function commandUnpack(args, options) {
   const rootDir = path.resolve(outputDir)
   const mask = options.mask || '*'
   const files = storm.listFiles(archivePath, mask, {
-    maxEntries: parseNumber(options.maxEntries, 'max-entries'),
+    maxEntries: maxEntriesLimit(options),
   })
   const readLimits = readOptions(options)
 
@@ -282,11 +318,8 @@ function commandUnpack(args, options) {
   for (const file of files) {
     const outputPath = archiveNameToPath(rootDir, file.name)
     fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-    if (options.maxBytes !== undefined) {
-      fs.writeFileSync(outputPath, storm.readFile(archivePath, file.name, readLimits))
-    } else {
-      storm.extractFile(archivePath, file.name, outputPath, { rootDir })
-    }
+    ensureArchiveFileWithinLimit(archivePath, file.name, readLimits.maxBytes)
+    storm.extractFile(archivePath, file.name, outputPath, { rootDir })
   }
 
   process.stdout.write(`Extracted ${files.length} file${files.length === 1 ? '' : 's'} to ${rootDir}\n`)

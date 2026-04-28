@@ -43,6 +43,29 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Resolve prebuild target
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        id: prebuild-target
+        shell: pwsh
+        run: |
+          $target = node -p "process.platform + '-' + process.arch"
+          "target=$target" >> $env:GITHUB_OUTPUT
+
+      - name: Stage prebuilt addon
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "prebuilds/${{ steps.prebuild-target.outputs.target }}"
+          Copy-Item -Path "build/Release/NodeStorm.node" -Destination "prebuilds/${{ steps.prebuild-target.outputs.target }}/NodeStorm.node"
+
+      - name: Upload prebuilt addon
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ steps.prebuild-target.outputs.target }}
+          path: prebuilds/${{ steps.prebuild-target.outputs.target }}/NodeStorm.node
+          if-no-files-found: error
+
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
@@ -99,6 +122,22 @@ jobs:
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Download prebuilt addons
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuild-*
+          path: downloaded-prebuilds
+
+      - name: Arrange prebuilt addons
+        shell: bash
+        run: |
+          mkdir -p prebuilds
+          for artifact_dir in downloaded-prebuilds/prebuild-*; do
+            prebuild_name="${artifact_dir##*/prebuild-}"
+            mkdir -p "prebuilds/$prebuild_name"
+            cp "$artifact_dir/NodeStorm.node" "prebuilds/$prebuild_name/NodeStorm.node"
+          done
+
       - name: Preview package
         if: steps.npm-version.outputs.published == 'false'
         run: npm pack --dry-run
@@ -106,5 +145,23 @@ jobs:
       - name: Publish package
         if: steps.npm-version.outputs.published == 'false'
         run: npm publish --access public --tag "${{ steps.npm-dist-tag.outputs.tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+
+      - name: Sync npm dist tags
+        shell: bash
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          dist_tag="${{ steps.npm-dist-tag.outputs.tag }}"
+
+          npm dist-tag add "$package_name@$package_version" "$dist_tag"
+
+          if [ "$dist_tag" != "latest" ]; then
+            current_latest="$(npm view "$package_name" dist-tags.latest 2>/dev/null || true)"
+            if [ "$current_latest" = "$package_version" ]; then
+              npm dist-tag rm "$package_name" latest
+            fi
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

@@ -25,9 +25,10 @@ tree.
 | Read archive metadata | `getArchiveInfo()` |
 | List files with StormLib masks | `listFiles()` |
 | Check for a file | `hasFile()` |
+| Inspect one file before reading | `getFileInfo()` |
 | Read archive files as `Buffer` objects | `readFile()` |
 | Read files from a worker thread | `readFileAsync()` |
-| Create a readable stream for a file | `createReadStream()` |
+| Stream archive files in chunks | `createReadStream()` |
 | Extract archive files to disk | `extractFile()` |
 | Create new MPQ archives | `createArchive()` |
 | Add compressed local files | `addFile()` |
@@ -47,9 +48,10 @@ tree.
 npm install
 ```
 
-The install script builds `build/Release/NodeStorm.node` through CMake.js.
-When a matching `prebuilds/<platform>-<arch>/NodeStorm.node` file is packaged,
-the loader uses it before falling back to the local CMake.js build output.
+Published packages use `prebuilds/<platform>-<arch>/NodeStorm.node` when a
+matching addon is available. If no prebuild matches, the install script compiles
+`build/Release/NodeStorm.node` with CMake.js. Set
+`NODE_STORMLIB_BUILD_FROM_SOURCE=1` to force a local build.
 
 ## Quick Start
 
@@ -60,10 +62,12 @@ const archivePath = 'test/fixtures/maps/SaveAndLoad.w3x'
 
 const info = storm.getArchiveInfo(archivePath)
 const files = storm.listFiles(archivePath, 'war3map.*')
+const fileInfo = storm.getFileInfo(archivePath, 'war3map.w3i')
 const mapInfo = storm.readFile(archivePath, 'war3map.w3i')
 
 console.log(info.fileCount)
 console.log(files.map(file => file.name))
+console.log(fileInfo.size)
 console.log(mapInfo.length)
 ```
 
@@ -78,6 +82,7 @@ mpq info map.w3x
 mpq list map.w3x "war3map.*"
 mpq extract map.w3x war3map.w3i out/war3map.w3i --root out
 mpq unpack map.w3x out/map --max-bytes 10485760
+mpq unpack map.w3x out/map --no-limits
 ```
 
 Create and compress archives from files or directories:
@@ -90,8 +95,10 @@ mpq compact out/assets.mpq --root out
 ```
 
 Useful aliases include `mpq ls`, `mpq x`, `mpq compress`, and `mpq decompress`.
-Bulk extraction validates archive entry names before writing, and write commands
-support `--root`, `--source-root`, and `--max-bytes` safety limits.
+Bulk extraction validates archive entry names before writing. Read and write
+commands default to a 512 MiB per-file limit, and list/unpack default to 10,000
+entries. Use `--max-bytes`, `--max-entries`, or `--no-limits` to tune those
+limits explicitly.
 
 ## API Reference
 
@@ -140,6 +147,15 @@ Returns `true` when `fileName` exists in the archive.
 storm.hasFile('map.w3x', 'war3map.w3i')
 ```
 
+### `getFileInfo(archivePath, fileName)`
+
+Returns metadata for one archive file without reading the file contents.
+
+```js
+const file = storm.getFileInfo('map.w3x', 'war3map.w3i')
+console.log(file.size, file.compressedSize, file.flags)
+```
+
 ### `readFile(archivePath, fileName, options)`
 
 Reads a file from the archive and returns a Node.js `Buffer`.
@@ -159,10 +175,17 @@ const bytes = await storm.readFileAsync('map.w3x', 'war3map.w3i')
 
 ### `createReadStream(archivePath, fileName, options)`
 
-Returns a `Readable` that emits the archive file contents.
+Returns a `Readable` that emits the archive file contents in chunks. Pass
+`maxBytes` to reject oversized files before chunk reads begin, and `chunkSize`
+to tune the read size.
 
 ```js
-storm.createReadStream('map.w3x', 'war3map.w3i').pipe(process.stdout)
+storm
+  .createReadStream('map.w3x', 'war3map.w3i', {
+    maxBytes: 1024 * 1024,
+    chunkSize: 64 * 1024,
+  })
+  .pipe(process.stdout)
 ```
 
 ### `extractFile(archivePath, fileName, outputPath, options)`

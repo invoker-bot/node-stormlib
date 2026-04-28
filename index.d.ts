@@ -21,12 +21,24 @@ export interface ArchiveEntry {
   blockIndex: number
 }
 
+export interface FileInfo {
+  name: string
+  size: number
+  compressedSize?: number
+  flags?: number
+  locale?: number
+  hashIndex?: number
+  blockIndex?: number
+  crc32?: number
+}
+
 export interface ListFilesOptions {
   maxEntries?: number
 }
 
 export interface ReadFileOptions {
   maxBytes?: number
+  chunkSize?: number
 }
 
 export interface ExtractFileOptions {
@@ -89,6 +101,7 @@ export function listFiles(
   options?: ListFilesOptions,
 ): ArchiveEntry[]
 export function hasFile(archivePath: string, fileName: string): boolean
+export function getFileInfo(archivePath: string, fileName: string): FileInfo
 export function readFile(
   archivePath: string,
   fileName: string,

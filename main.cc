@@ -1,6 +1,7 @@
 #include <napi.h>
 #include <StormLib.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <limits>
@@ -121,6 +122,33 @@ bool ReadStringArgument(
   }
 
   *value = info[index].As<Napi::String>().Utf8Value();
+  return true;
+}
+
+bool ReadSafeIntegerArgument(
+    const Napi::CallbackInfo& info,
+    size_t index,
+    const char* name,
+    uint64_t* value) {
+  Napi::Env env = info.Env();
+  if (info.Length() <= index || !info[index].IsNumber()) {
+    Napi::TypeError::New(env, std::string(name) + " must be a non-negative safe integer")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  double number = info[index].As<Napi::Number>().DoubleValue();
+  constexpr double kMaxSafeInteger = 9007199254740991.0;
+  if (!std::isfinite(number) ||
+      number < 0 ||
+      number > kMaxSafeInteger ||
+      std::floor(number) != number) {
+    Napi::RangeError::New(env, std::string(name) + " must be a non-negative safe integer")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+
+  *value = static_cast<uint64_t>(number);
   return true;
 }
 
@@ -431,6 +459,10 @@ bool GetArchiveDword(HANDLE archive, SFileInfoClass infoClass, DWORD* value) {
   return SFileGetFileInfo(archive, infoClass, value, sizeof(*value), nullptr);
 }
 
+bool GetFileDword(HANDLE file, SFileInfoClass infoClass, DWORD* value) {
+  return SFileGetFileInfo(file, infoClass, value, sizeof(*value), nullptr);
+}
+
 bool GetArchiveUInt64(HANDLE archive, SFileInfoClass infoClass, ULONGLONG* value) {
   return SFileGetFileInfo(archive, infoClass, value, sizeof(*value), nullptr);
 }
@@ -457,7 +489,9 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
       InstanceMethod("getArchiveInfo", &NodeStormAddon::GetArchiveInfo),
       InstanceMethod("listFiles", &NodeStormAddon::ListFiles),
       InstanceMethod("hasFile", &NodeStormAddon::HasFile),
+      InstanceMethod("getFileInfo", &NodeStormAddon::GetFileInfo),
       InstanceMethod("readFile", &NodeStormAddon::ReadFile),
+      InstanceMethod("readFileChunk", &NodeStormAddon::ReadFileChunk),
       InstanceMethod("extractFile", &NodeStormAddon::ExtractFile),
       InstanceMethod("createArchive", &NodeStormAddon::CreateArchive),
       InstanceMethod("addFile", &NodeStormAddon::AddFile),
@@ -592,6 +626,60 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     return Napi::Boolean::New(env, true);
   }
 
+  Napi::Value GetFileInfo(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    std::string archivePath;
+    std::string fileName;
+    if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
+        !ReadStringArgument(info, 1, "fileName", &fileName)) {
+      return env.Null();
+    }
+
+    ArchiveHandle archive = OpenArchiveOrThrow(env, archivePath);
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+
+    HANDLE file = nullptr;
+    if (!SFileOpenFileEx(archive.get(), fileName.c_str(), SFILE_OPEN_FROM_MPQ, &file)) {
+      ThrowStormError(env, "SFileOpenFileEx");
+      return env.Null();
+    }
+    FileHandle fileHandle(file);
+
+    DWORD size = 0;
+    if (!GetFileDword(fileHandle.get(), SFileInfoFileSize, &size)) {
+      ThrowStormError(env, "SFileGetFileInfo");
+      return env.Null();
+    }
+
+    Napi::Object result = Napi::Object::New(env);
+    result.Set("name", fileName);
+    result.Set("size", Napi::Number::New(env, size));
+
+    DWORD value = 0;
+    if (GetFileDword(fileHandle.get(), SFileInfoCompressedSize, &value)) {
+      result.Set("compressedSize", Napi::Number::New(env, value));
+    }
+    if (GetFileDword(fileHandle.get(), SFileInfoFlags, &value)) {
+      result.Set("flags", Napi::Number::New(env, value));
+    }
+    if (GetFileDword(fileHandle.get(), SFileInfoLocale, &value)) {
+      result.Set("locale", Napi::Number::New(env, value));
+    }
+    if (GetFileDword(fileHandle.get(), SFileInfoHashIndex, &value)) {
+      result.Set("hashIndex", Napi::Number::New(env, value));
+    }
+    if (GetFileDword(fileHandle.get(), SFileInfoFileIndex, &value)) {
+      result.Set("blockIndex", Napi::Number::New(env, value));
+    }
+    if (GetFileDword(fileHandle.get(), SFileInfoCRC32, &value)) {
+      result.Set("crc32", Napi::Number::New(env, value));
+    }
+
+    return result;
+  }
+
   Napi::Value ReadFile(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     std::string archivePath;
@@ -655,6 +743,77 @@ class NodeStormAddon : public Napi::Addon<NodeStormAddon> {
     }
 
     return Napi::Buffer<char>::Copy(env, buffer.data(), buffer.size());
+  }
+
+  Napi::Value ReadFileChunk(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    std::string archivePath;
+    std::string fileName;
+    uint64_t offset = 0;
+    uint64_t length = 0;
+    if (!ReadStringArgument(info, 0, "archivePath", &archivePath) ||
+        !ReadStringArgument(info, 1, "fileName", &fileName) ||
+        !ReadSafeIntegerArgument(info, 2, "offset", &offset) ||
+        !ReadSafeIntegerArgument(info, 3, "length", &length)) {
+      return env.Null();
+    }
+
+    if (length > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+      ThrowCodedRangeError(env, "chunk length is too large to read into a Node.js Buffer");
+      return env.Null();
+    }
+
+    ArchiveHandle archive = OpenArchiveOrThrow(env, archivePath);
+    if (env.IsExceptionPending()) {
+      return env.Null();
+    }
+
+    HANDLE file = nullptr;
+    if (!SFileOpenFileEx(archive.get(), fileName.c_str(), SFILE_OPEN_FROM_MPQ, &file)) {
+      ThrowStormError(env, "SFileOpenFileEx");
+      return env.Null();
+    }
+    FileHandle fileHandle(file);
+
+    DWORD highSize = 0;
+    DWORD lowSize = SFileGetFileSize(fileHandle.get(), &highSize);
+    if (lowSize == SFILE_INVALID_SIZE && SErrGetLastError() != ERROR_SUCCESS) {
+      ThrowStormError(env, "SFileGetFileSize");
+      return env.Null();
+    }
+
+    uint64_t fileSize = (static_cast<uint64_t>(highSize) << 32) | lowSize;
+    if (offset >= fileSize || length == 0) {
+      return Napi::Buffer<char>::New(env, 0);
+    }
+
+    uint64_t bytesToRead64 = std::min(length, fileSize - offset);
+    if (bytesToRead64 > static_cast<uint64_t>(std::numeric_limits<DWORD>::max())) {
+      ThrowCodedRangeError(env, "chunk length is too large to read from StormLib");
+      return env.Null();
+    }
+
+    LONG highOffset = static_cast<LONG>(offset >> 32);
+    DWORD lowOffset = SFileSetFilePointer(
+        fileHandle.get(),
+        static_cast<LONG>(offset & 0xFFFFFFFF),
+        &highOffset,
+        FILE_BEGIN);
+    if (lowOffset == SFILE_INVALID_POS && SErrGetLastError() != ERROR_SUCCESS) {
+      ThrowStormError(env, "SFileSetFilePointer");
+      return env.Null();
+    }
+
+    DWORD bytesToRead = static_cast<DWORD>(bytesToRead64);
+    std::vector<char> buffer(bytesToRead);
+    DWORD bytesRead = 0;
+    if (bytesToRead > 0 &&
+        !SFileReadFile(fileHandle.get(), buffer.data(), bytesToRead, &bytesRead, nullptr)) {
+      ThrowStormError(env, "SFileReadFile");
+      return env.Null();
+    }
+
+    return Napi::Buffer<char>::Copy(env, buffer.data(), bytesRead);
   }
 
   Napi::Value ExtractFile(const Napi::CallbackInfo& info) {

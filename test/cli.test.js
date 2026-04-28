@@ -34,6 +34,8 @@ test('prints CLI help', () => {
   assert.match(result.stdout, /Usage:/)
   assert.match(result.stdout, /mpq pack/)
   assert.match(result.stdout, /mpq unpack/)
+  assert.match(result.stdout, /--no-limits/)
+  assert.match(result.stdout, /Safety defaults:/)
 })
 
 test('packs a directory, lists entries, extracts one file, and unpacks safely', () => {
@@ -91,6 +93,19 @@ test('packs a directory, lists entries, extracts one file, and unpacks safely', 
     assert.strictEqual(unpack.status, 0, unpack.stderr)
     assert.strictEqual(fs.readFileSync(path.join(unpackDir, 'alpha.txt'), 'utf8'), 'alpha')
     assert.strictEqual(fs.readFileSync(path.join(unpackDir, 'nested', 'beta.txt'), 'utf8'), 'beta')
+
+    const tooSmall = runMpq([
+      'extract',
+      archivePath,
+      'alpha.txt',
+      path.join(tempDir, 'limited', 'alpha.txt'),
+      '--root',
+      path.join(tempDir, 'limited'),
+      '--max-bytes',
+      '1',
+    ])
+    assert.notStrictEqual(tooSmall.status, 0)
+    assert.match(tooSmall.stderr, /max-bytes|exceeds/i)
   })
 })
 

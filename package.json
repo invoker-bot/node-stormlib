@@ -1,9 +1,18 @@
 {
   "name": "node-stormlib",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "A library to process Blizzard game MPQ format archives.",
+  "type": "commonjs",
   "main": "index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "mpq": "bin/mpq.js"
   },
@@ -20,6 +29,7 @@
     "index.js",
     "native.js",
     "read-worker.js",
+    "scripts/",
     "main.cc",
     "CMakeLists.txt",
     "cmake/",
@@ -31,13 +41,20 @@
   ],
   "scripts": {
     "build": "cmake-js compile",
-    "install": "npm run build",
+    "install": "node scripts/install.js",
     "test": "node --test test/*.test.js",
     "test:review": "node --test test/review-findings.test.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/invoker-bot/node-stormlib.git"
+  },
+  "bugs": {
+    "url": "https://github.com/invoker-bot/node-stormlib/issues"
+  },
+  "homepage": "https://github.com/invoker-bot/node-stormlib#readme",
+  "engines": {
+    "node": ">=18"
   },
   "keywords": [
     "Storm",

@@ -26,6 +26,7 @@ test('exports the MPQ archive API', () => {
   assert.strictEqual(typeof storm.getArchiveInfo, 'function')
   assert.strictEqual(typeof storm.listFiles, 'function')
   assert.strictEqual(typeof storm.hasFile, 'function')
+  assert.strictEqual(typeof storm.getFileInfo, 'function')
   assert.strictEqual(typeof storm.readFile, 'function')
   assert.strictEqual(typeof storm.readFileAsync, 'function')
   assert.strictEqual(typeof storm.createReadStream, 'function')
@@ -69,6 +70,18 @@ test('checks file existence inside an archive', () => {
   assert.strictEqual(storm.hasFile(saveAndLoadMap, 'missing.txt'), false)
 })
 
+test('reads metadata for one file inside an archive', () => {
+  const contents = storm.readFile(saveAndLoadMap, 'war3map.w3i')
+  const info = storm.getFileInfo(saveAndLoadMap, 'war3map.w3i')
+
+  assert.strictEqual(info.name, 'war3map.w3i')
+  assert.strictEqual(info.size, contents.length)
+  assert.ok(info.compressedSize > 0)
+  assert.strictEqual(typeof info.flags, 'number')
+  assert.strictEqual(typeof info.locale, 'number')
+  assert.strictEqual(typeof info.blockIndex, 'number')
+})
+
 test('reads files from an archive as buffers', () => {
   const contents = storm.readFile(saveAndLoadMap, 'war3map.w3i')
 
@@ -80,11 +93,18 @@ test('reads files asynchronously and as readable streams', async () => {
   const expected = storm.readFile(saveAndLoadMap, 'war3map.w3i')
   const asyncContents = await storm.readFileAsync(saveAndLoadMap, 'war3map.w3i')
   const streamContents = await collectStream(
-    storm.createReadStream(saveAndLoadMap, 'war3map.w3i'),
+    storm.createReadStream(saveAndLoadMap, 'war3map.w3i', { chunkSize: 16 }),
   )
 
   assert.deepStrictEqual(asyncContents, expected)
   assert.deepStrictEqual(streamContents, expected)
+})
+
+test('readable streams enforce maxBytes before reading chunks', async () => {
+  await assert.rejects(
+    collectStream(storm.createReadStream(saveAndLoadMap, 'war3map.w3i', { maxBytes: 1 })),
+    /maxBytes|exceeds/i,
+  )
 })
 
 test('preserves native error metadata for asynchronous reads', async () => {

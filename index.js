@@ -7,6 +7,9 @@ const { Worker } = require('worker_threads')
 
 const native = require('./native')
 
+const DEFAULT_STREAM_CHUNK_SIZE = 64 * 1024
+const MAX_STREAM_CHUNK_SIZE = 8 * 1024 * 1024
+
 const compression = Object.freeze({
   none: 'none',
   zlib: 'zlib',
@@ -52,6 +55,35 @@ function assertBooleanOption(options, name) {
   if (typeof value !== 'boolean') {
     throw new TypeError(`${name} must be a boolean`)
   }
+}
+
+function readSafeIntegerOption(options, name) {
+  const value = options[name]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`${name} must be a non-negative safe integer`)
+  }
+
+  return value
+}
+
+function readPositiveSafeIntegerOption(options, name, defaultValue, maxValue) {
+  const value = options[name]
+  if (value === undefined || value === null) {
+    return defaultValue
+  }
+
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive safe integer`)
+  }
+  if (value > maxValue) {
+    throw new RangeError(`${name} must be at most ${maxValue}`)
+  }
+
+  return value
 }
 
 function assertArchiveName(archivedName) {
@@ -107,6 +139,10 @@ function listFiles(archivePath, mask, options) {
 
 function hasFile(archivePath, fileName) {
   return native.hasFile(archivePath, fileName)
+}
+
+function getFileInfo(archivePath, fileName) {
+  return native.getFileInfo(archivePath, fileName)
 }
 
 function readFile(archivePath, fileName, options) {
@@ -268,23 +304,57 @@ function readFileAsync(archivePath, fileName, options) {
 }
 
 function createReadStream(archivePath, fileName, options) {
-  let started = false
+  const normalizedOptions = assertOptions(options)
+  const maxBytes = readSafeIntegerOption(normalizedOptions, 'maxBytes')
+  const chunkSize = readPositiveSafeIntegerOption(
+    normalizedOptions,
+    'chunkSize',
+    DEFAULT_STREAM_CHUNK_SIZE,
+    MAX_STREAM_CHUNK_SIZE,
+  )
 
+  let fileInfo
+  let offset = 0
+  let ended = false
   return new Readable({
-    read() {
-      if (started) {
+    highWaterMark: chunkSize,
+    read(size) {
+      if (ended) {
         return
       }
 
-      started = true
-      readFileAsync(archivePath, fileName, options)
-        .then(buffer => {
-          this.push(buffer)
+      try {
+        if (!fileInfo) {
+          fileInfo = getFileInfo(archivePath, fileName)
+          if (maxBytes !== undefined && fileInfo.size > maxBytes) {
+            const error = new RangeError('file exceeds maxBytes limit')
+            error.code = 'ERR_NODE_STORMLIB_LIMIT'
+            throw error
+          }
+        }
+
+        if (offset >= fileInfo.size) {
+          ended = true
           this.push(null)
-        })
-        .catch(error => {
-          this.destroy(error)
-        })
+          return
+        }
+
+        const requestedSize = Number.isSafeInteger(size) && size > 0 ? size : chunkSize
+        const bytesToRead = Math.min(requestedSize, chunkSize, fileInfo.size - offset)
+        const chunk = native.readFileChunk(archivePath, fileName, offset, bytesToRead)
+        offset += chunk.length
+
+        if (chunk.length === 0 && bytesToRead > 0) {
+          const error = new Error('readFileChunk returned fewer bytes than expected')
+          error.code = 'ERR_NODE_STORMLIB_SHORT_READ'
+          throw error
+        }
+
+        this.push(chunk)
+      } catch (error) {
+        ended = true
+        this.destroy(error)
+      }
     },
   })
 }
@@ -293,6 +363,7 @@ module.exports = {
   getArchiveInfo,
   listFiles,
   hasFile,
+  getFileInfo,
   readFile,
   readFileAsync,
   createReadStream,
