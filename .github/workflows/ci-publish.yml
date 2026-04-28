@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Build and test
@@ -159,7 +162,7 @@ jobs:
 
           if [ "$dist_tag" != "latest" ]; then
             current_latest="$(npm view "$package_name" dist-tags.latest 2>/dev/null || true)"
-            if [ "$current_latest" = "$package_version" ]; then
+            if [[ "$current_latest" == *-* ]]; then
               npm dist-tag rm "$package_name" latest
             fi
           fi
